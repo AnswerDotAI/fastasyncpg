@@ -28,3 +28,4 @@ version = {attr = "fastasyncpg.__version__"}
 include = ["fastasyncpg"]
 
 [tool.nbdev]
+custom_sidebar = false
