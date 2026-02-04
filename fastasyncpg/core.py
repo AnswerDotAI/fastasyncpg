@@ -6,6 +6,7 @@ __all__ = ['pg_to_py', 'py_to_pg', 'FRecord', 'Results', 'table_names', 'view_na
            'col_def', 'create_pool']
 
 # %% ../nbs/00_core.ipynb #222d751e
+from fastcore.utils import *
 import asyncpg
 from asyncpg import connection,protocol
 
