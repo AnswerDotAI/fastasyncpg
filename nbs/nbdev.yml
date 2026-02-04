@@ -1,0 +1,9 @@
+project:
+  output-dir: _docs
+
+website:
+  title: "fastasyncpg"
+  site-url: "https://AnswerDotAI.github.io/fastasyncpg"
+  description: "A simple wrapper for asyncpg"
+  repo-branch: main
+  repo-url: "https://github.com/AnswerDotAI/fastasyncpg"
