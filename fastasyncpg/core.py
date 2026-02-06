@@ -292,6 +292,14 @@ async def rows_where(self:Table, where=None, where_args=None, order_by=None, sel
     if as_cls and hasattr(self, 'cls'): res = [self.cls(**r) for r in res]
     return res
 
+# %% ../nbs/00_core.ipynb #481230b7
+@patch(as_prop=True)
+async def count(self:Table):
+    where, args = _add_xtra(self, None, [])
+    sql = f'SELECT COUNT(*) FROM {self}'
+    if where: sql += f' WHERE {where}'
+    return await self.db.fetchval(sql, *args)
+
 # %% ../nbs/00_core.ipynb #28682469
 from collections.abc import Mapping
 
@@ -454,6 +462,15 @@ async def delete(self:Table, pk_values):
     res = await self.db.fetch(sql, *args)
     if not res: raise NotFoundError(f"{self.name}[{pk_values}]")
     return self.cls(**res[0]) if hasattr(self, 'cls') else res[0]
+
+# %% ../nbs/00_core.ipynb #0fc57f94
+@patch
+async def delete_where(self:Table, where=None, where_args=None):
+    where, args = _add_xtra(self, where, where_args or [])
+    sql = f'DELETE FROM {self}' + (f' WHERE {where}' if where else '') + ' RETURNING *'
+    res = await self.db.fetch(sql, *args)
+    if hasattr(self, 'cls'): res = [self.cls(**r) for r in res]
+    return res
 
 # %% ../nbs/00_core.ipynb #d45f513e
 py_to_pg = {v: k for k, v in pg_to_py.items() if v not in (list, tuple, Range)}
