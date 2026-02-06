@@ -94,6 +94,11 @@ class Database:
         self._tnames,self._vnames = await table_names(self),await view_names(self)
         self._cols = {o: (await columns_info(self, o)) for o in self._tnames+self._vnames}
         self._pks = {o: (await pk_cols(self, o)) for o in self._tnames}
+    
+    def __str__(self):
+        p,a = self.conn._params, self.conn._addr
+        return f"postgresql://{p.user}@{a[0]}:{a[1]}/{p.database}"
+
 
 # %% ../nbs/00_core.ipynb #ae461a23
 class Table:
