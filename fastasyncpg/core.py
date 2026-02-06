@@ -96,8 +96,13 @@ class Database:
         self._pks = {o: (await pk_cols(self, o)) for o in self._tnames}
     
     def __str__(self):
-        p,a = self.conn._params, self.conn._addr
-        return f"postgresql://{p.user}@{a[0]}:{a[1]}/{p.database}"
+        if isinstance(self.conn, asyncpg.pool.Pool):
+            kw = self.conn._connect_kwargs
+            u,h,d,p = kw.get('user','postgres'), kw.get('host','localhost'), kw.get('database','postgres'), kw.get('port',5432)
+        else:
+            pr,a = self.conn._params, self.conn._addr
+            u,h,d,p = pr.user, a[0], pr.database, a[1]
+        return f"postgresql://{u}@{h}:{p}/{d}"
 
 
 # %% ../nbs/00_core.ipynb #ae461a23
