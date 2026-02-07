@@ -12,7 +12,7 @@ license = {text = "Apache-2.0"}
 authors = [{name = "Jeremy Howard", email = "github@jhoward.fastmail.fm"}]
 keywords = ['nbdev']
 classifiers = [ "Programming Language :: Python :: 3", "Programming Language :: Python :: 3 :: Only" ]
-dependencies = [ "asyncpg", "fastcore" ]
+dependencies = [ "asyncpg", "fastcore","sqlparse" ]
 
 [project.urls]
 Repository = "https://github.com/AnswerDotAI/fastasyncpg"

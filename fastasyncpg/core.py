@@ -2,8 +2,8 @@
 
 # %% auto #0
 __all__ = ['pg_to_py', 'py_to_pg', 'Results', 'FRecord', 'table_names', 'view_names', 'columns_info', 'pk_cols', 'Database',
-           'Table', 'get_typ', 'setup_json', 'connect', 'all_dcs', 'NotFoundError', 'get_field', 'create_mod',
-           'col_def', 'create_pool']
+           'Table', 'conv_placeholders', 'get_typ', 'setup_json', 'connect', 'all_dcs', 'NotFoundError', 'get_field',
+           'create_mod', 'col_def', 'create_pool']
 
 # %% ../nbs/00_core.ipynb #222d751e
 from fastcore.utils import *
@@ -162,9 +162,25 @@ class _ColsGetter:
 @patch(as_prop=True)
 def c(self:Table): return _ColsGetter(self)
 
-# %% ../nbs/00_core.ipynb #891dcd10
+# %% ../nbs/00_core.ipynb #c6a5d503
+import sqlparse
+from itertools import count
+from sqlparse import tokens
+
+# %% ../nbs/00_core.ipynb #1ca2b1b9
+def conv_placeholders(sql):
+    "Convert `?` placeholders to PostgreSQL `$n` style"
+    if '?' not in sql: return sql
+    c = count(1)
+    def _convpl1(s):
+        return ''.join(f'${next(c)}' if t.ttype is tokens.Name.Placeholder and t.value=='?' else t.value for t in s.flatten())
+    return ''.join([_convpl1(s) for s in sqlparse.parse(sql)])
+
+# %% ../nbs/00_core.ipynb #ceeb54fb
 @patch
-async def q(self:Database, sql, *args): return Results(await self.fetch(sql, *args))
+async def q(self:Database, sql, *args):
+    csql = conv_placeholders(sql)
+    return Results(await self.fetch(csql, *args))
 
 # %% ../nbs/00_core.ipynb #0fc7310b
 from datetime import datetime, date, time, timedelta
@@ -287,7 +303,7 @@ async def rows_where(self:Table, where=None, where_args=None, order_by=None, sel
     if offset: sql += f' OFFSET {offset}'
     if debug: print(sql)
     if as_cls: return await self._recs(sql, *args)
-    return await self.db.fetch(sql, *args)
+    return await self.db.q(sql, *args)
 
 # %% ../nbs/00_core.ipynb #b96b3f21
 @patch
