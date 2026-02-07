@@ -94,6 +94,16 @@ class Database:
         self._tnames,self._vnames = await table_names(self),await view_names(self)
         self._cols = {o: (await columns_info(self, o)) for o in self._tnames+self._vnames}
         self._pks = {o: (await pk_cols(self, o)) for o in self._tnames}
+    
+    def __str__(self):
+        if isinstance(self.conn, asyncpg.pool.Pool):
+            kw = self.conn._connect_kwargs
+            u,h,d,p = kw.get('user','postgres'), kw.get('host','localhost'), kw.get('database','postgres'), kw.get('port',5432)
+        else:
+            pr,a = self.conn._params, self.conn._addr
+            u,h,d,p = pr.user, a[0], pr.database, a[1]
+        return f"postgresql://{u}@{h}:{p}/{d}"
+
 
 # %% ../nbs/00_core.ipynb #ae461a23
 class Table:
@@ -240,8 +250,8 @@ def all_dcs(db, with_views=False, store=True, suf=''):
 
 # %% ../nbs/00_core.ipynb #b37f834d
 def _add_xtra(tbl, where, args, offset=0):
+    args = listify(args)
     if not tbl.xtra_id: return where, args
-    args = list(args)
     xw = ' AND '.join(f'"{k}"=${len(args)+offset+i+1}' for i,k in enumerate(tbl.xtra_id))
     where = f'({where}) AND {xw}' if where else xw
     args.extend(tbl.xtra_id.values())
@@ -255,9 +265,7 @@ async def __getitem__(self:Table, pk):
     "Get row by primary key, raising NotFoundError if missing"
     if not self.pks: raise ValueError(f"No primary key for {self.name}")
     where, args = _add_xtra(self, f'"{self.pks[0]}" = $1', [pk])
-    res = await self.db.fetch(f'SELECT * FROM {self} WHERE {where}', *args)
-    if not res: raise NotFoundError(f"{self.name}[{pk}]")
-    return self.cls(**res[0]) if hasattr(self, 'cls') else res[0]
+    return await self._rec(f'SELECT * FROM {self} WHERE {where}', *args, err=f"{self.name}[{pk}]")
 
 # %% ../nbs/00_core.ipynb #76a582ae
 @patch
@@ -278,9 +286,20 @@ async def rows_where(self:Table, where=None, where_args=None, order_by=None, sel
     if limit: sql += f' LIMIT {limit}'
     if offset: sql += f' OFFSET {offset}'
     if debug: print(sql)
-    res = await self.db.fetch(sql, *args)
-    if as_cls and hasattr(self, 'cls'): res = [self.cls(**r) for r in res]
-    return res
+    if as_cls: return await self._recs(sql, *args)
+    return await self.db.fetch(sql, *args)
+
+# %% ../nbs/00_core.ipynb #b96b3f21
+@patch
+async def count_where(self:Table, where=None, where_args=None):
+    where, args = _add_xtra(self, where, where_args)
+    sql = f'SELECT COUNT(*) FROM {self}'
+    if where: sql += f' WHERE {where}'
+    return await self.db.fetchval(sql, *args)
+
+# %% ../nbs/00_core.ipynb #481230b7
+@patch(as_prop=True)
+async def count(self:Table): return await self.count_where()
 
 # %% ../nbs/00_core.ipynb #28682469
 from collections.abc import Mapping
@@ -386,17 +405,12 @@ def _prep_row(record, kwargs):
     return row, cols, vals
 
 @patch
-async def _exec_returning(self:Table, sql, *args):
-    res = await self.db.fetch(sql, *args)
-    return self.cls(**res[0]) if hasattr(self, 'cls') else res[0]
-
-@patch
 async def insert(self:Table, record=None, **kwargs):
     "Insert a row and return it"
     row, cols, vals = _prep_row(record, {**kwargs, **self.xtra_id})
     if not row: return None
     sql = f'INSERT INTO {self} ({cols}) VALUES ({vals}) RETURNING *'
-    return await self._exec_returning(sql, *row.values())
+    return await self._rec(sql, *row.values())
 
 # %% ../nbs/00_core.ipynb #8a782068
 @patch
@@ -414,7 +428,7 @@ async def table2glb(self:Database, name, glb=None):
     if glb is None: glb = inspect.currentframe().f_back.f_globals
     tbl = await self._retr_tbl(name)
     cls = tbl.dataclass()
-    glb[name],glb[cls.__name__] = tbl,cls
+    glb[name+'s'],glb[cls.__name__] = tbl,cls
 
 # %% ../nbs/00_core.ipynb #9b261543
 def _pk_where(pks, offset=0):
@@ -431,9 +445,7 @@ async def update(self:Table, record=None, pk_values=None, **kwargs):
     xwhere = _pk_where(self.pks, len(row))
     pk_where, args = _add_xtra(self, xwhere, pk_values, len(row))
     sql = f'UPDATE {self} SET {sets} WHERE {pk_where} RETURNING *'
-    res = await self.db.fetch(sql, *row.values(), *args)
-    if not res: raise NotFoundError(f"{self.name}[{pk_values}]")
-    return self.cls(**res[0]) if hasattr(self, 'cls') else res[0]
+    return await self._rec(sql, *row.values(), *args, err=f"{self.name}[{pk_values}]")
 
 # %% ../nbs/00_core.ipynb #f9968e6f
 @patch
@@ -441,9 +453,14 @@ async def delete(self:Table, pk_values):
     "Delete row by primary key, returning the deleted row"
     pk_where, args = _add_xtra(self, _pk_where(self.pks), listify(pk_values))
     sql = f'DELETE FROM {self} WHERE {pk_where} RETURNING *'
-    res = await self.db.fetch(sql, *args)
-    if not res: raise NotFoundError(f"{self.name}[{pk_values}]")
-    return self.cls(**res[0]) if hasattr(self, 'cls') else res[0]
+    return await self._rec(sql, *args, err=f"{self.name}[{pk_values}]")
+
+# %% ../nbs/00_core.ipynb #0fc57f94
+@patch
+async def delete_where(self:Table, where=None, where_args=None):
+    where, args = _add_xtra(self, where, where_args or [])
+    sql = f'DELETE FROM {self}' + (f' WHERE {where}' if where else '') + ' RETURNING *'
+    return await self._recs(sql, *args)
 
 # %% ../nbs/00_core.ipynb #d45f513e
 py_to_pg = {v: k for k, v in pg_to_py.items() if v not in (list, tuple, Range)}
@@ -502,8 +519,7 @@ async def upsert(self:Table, record=None, **kwargs):
     if not row: return None
     pk = self.pks[0]
     updates = ', '.join(f'"{k}"=EXCLUDED."{k}"' for k in row if k != pk)
-    sql = f'INSERT INTO {self} ({cols}) VALUES ({vals}) ON CONFLICT ("{pk}") DO UPDATE SET {updates} RETURNING *'
-    return await self._exec_returning(sql, *row.values())
+    return await self._rec(f'INSERT INTO {self} ({cols}) VALUES ({vals}) ON CONFLICT ("{pk}") DO UPDATE SET {updates} RETURNING *', *row.values())
 
 # %% ../nbs/00_core.ipynb #6be00990
 async def create_pool(*args, **kwargs):
