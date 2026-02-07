@@ -2,6 +2,13 @@
 
 <!-- do not remove -->
 
+## 0.0.2
+
+### New Features
+
+- Add named :param placeholders and attach `_db` to dataclass results ([#3](https://github.com/AnswerDotAI/fastasyncpg/issues/3))
+
+
 ## 0.0.1
 
 ### New Features
