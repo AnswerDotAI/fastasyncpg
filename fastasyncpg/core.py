@@ -167,20 +167,35 @@ import sqlparse
 from itertools import count
 from sqlparse import tokens
 
-# %% ../nbs/00_core.ipynb #1ca2b1b9
-def conv_placeholders(sql):
-    "Convert `?` placeholders to PostgreSQL `$n` style"
-    if '?' not in sql: return sql
-    c = count(1)
-    def _convpl1(s):
-        return ''.join(f'${next(c)}' if t.ttype is tokens.Name.Placeholder and t.value=='?' else t.value for t in s.flatten())
-    return ''.join([_convpl1(s) for s in sqlparse.parse(sql)])
+# %% ../nbs/00_core.ipynb #d15d86a3
+def _convq(parsed, c):
+    "Replace `?` placeholder tokens with `$n` in parsed SQL"
+    for s in parsed:
+        for t in s.flatten():
+            if t.ttype is tokens.Name.Placeholder and t.value == '?': t.value = f'${next(c)}'
 
-# %% ../nbs/00_core.ipynb #ceeb54fb
+def conv_placeholders(sql, **kwargs):
+    "Convert `?` and `:name` placeholders to PostgreSQL `$n` style"
+    if '?' not in sql and not kwargs: return sql, []
+    parsed = sqlparse.parse(sql)
+    c = count(1)
+    _convq(parsed, c)
+    seen, kw_args = {}, []
+    for s in parsed:
+        for t in s.flatten():
+            if t.ttype is tokens.Name.Placeholder and t.value[0]!='$':
+                name = t.value.lstrip(':')
+                if name not in seen:
+                    seen[name] = f'${next(c)}'
+                    kw_args.append(kwargs[name])
+                t.value = seen[name]
+    return ''.join(str(s) for s in parsed), kw_args
+
+# %% ../nbs/00_core.ipynb #17fc5af6
 @patch
-async def q(self:Database, sql, *args):
-    csql = conv_placeholders(sql)
-    return Results(await self.fetch(csql, *args))
+async def q(self:Database, sql, *args, **kwargs):
+    csql, kw_args = conv_placeholders(sql, **kwargs)
+    return Results(await self.fetch(csql, *args, *kw_args))
 
 # %% ../nbs/00_core.ipynb #0fc7310b
 from datetime import datetime, date, time, timedelta
@@ -272,6 +287,25 @@ def _add_xtra(tbl, where, args, offset=0):
     where = f'({where}) AND {xw}' if where else xw
     args.extend(tbl.xtra_id.values())
     return where, args
+
+# %% ../nbs/00_core.ipynb #975d0f26
+@patch
+async def _recs(self:Table, sql, *args):
+    "Fetch rows and convert to cls"
+    cls = getattr(self, 'cls', None)
+    def f(r):
+        if not cls: return r
+        res = cls(**r)
+        res._db = self.db
+        return res
+    return [f(r) for r in await self.db.q(sql, *args)]
+
+@patch
+async def _rec(self:Table, sql, *args, err=None):
+    "Fetch one row, optionally raising NotFoundError"
+    res = await self._recs(sql, *args)
+    if res: return res[0]
+    if err: raise NotFoundError(err)
 
 # %% ../nbs/00_core.ipynb #de5874df
 class NotFoundError(Exception): pass
