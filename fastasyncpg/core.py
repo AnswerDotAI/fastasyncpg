@@ -527,7 +527,19 @@ def col_def(name, typ, pk, not_null):
     elif not_null and name in not_null: parts.append('NOT NULL')
     return ' '.join(parts)
 
-# %% ../nbs/00_core.ipynb #2c17673d
+# %% ../nbs/00_core.ipynb #6d22bc9f
+@patch
+async def create_from_schema(self:Database, name, schema, cls=None, if_not_exists=False, replace=False):
+    "Create table from raw SQL schema string"
+    exists = 'IF NOT EXISTS ' if if_not_exists else ''
+    if replace: await self.execute(f'DROP TABLE IF EXISTS "{name}" CASCADE')
+    await self.execute(f'CREATE TABLE {exists}"{name}" ( {schema} )')
+    tbl = await self._retr_tbl(name)
+    if cls: tbl.cls = cls
+    else: tbl.dataclass()
+    return tbl
+
+# %% ../nbs/00_core.ipynb #74a0ca66
 @patch
 async def create(self:Database, cls=None, name=None, pk='id', foreign_keys=None, defaults=None, 
                  column_order=None, not_null=None, if_not_exists=False, replace=False):
@@ -545,13 +557,8 @@ async def create(self:Database, cls=None, name=None, pk='id', foreign_keys=None,
         for col, (ref_tbl, ref_col) in foreign_keys.items():
             cols.append(f'FOREIGN KEY ("{col}") REFERENCES "{ref_tbl}" ("{ref_col}")')
     
-    col_sql = ', '.join(cols)
-    exists = 'IF NOT EXISTS ' if if_not_exists else ''
-    if replace: await self.execute(f'DROP TABLE IF EXISTS "{name}" CASCADE')
-    await self.execute(f'CREATE TABLE {exists}"{name}" ( {col_sql} )')
-    tbl = await self._retr_tbl(name)
-    tbl.cls = cls
-    return tbl
+    schema = ', '.join(cols)
+    return await self.create_from_schema(name, schema, cls=cls, if_not_exists=if_not_exists, replace=replace)
 
 # %% ../nbs/00_core.ipynb #de113b34
 @patch
