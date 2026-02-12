@@ -70,6 +70,10 @@ async def pk_cols(conn, table):
         WHERE i.indrelid = $1::regclass AND i.indisprimary""", table)
     return [r['attname'] for r in res]
 
+# %% ../nbs/00_core.ipynb #a947c1ab
+import contextvars
+_txn_conn = contextvars.ContextVar('_txn_conn', default=None)  # Used by Database.__getattr__ to route queries through active transaction; see Transactions section below
+
 # %% ../nbs/00_core.ipynb #350e6168
 class Database:
     def __init__(self, conn, refresh=True):
@@ -83,7 +87,7 @@ class Database:
         if not hasattr(self, '_t'): self._t = _TablesGetter(self)
         return self._t
 
-    def __getattr__(self, k): return getattr(self.conn, k)
+    def __getattr__(self, k): return getattr(_txn_conn.get() or self.conn, k)
 
     def table(self, name):
         if name not in self._tables: self._tables[name] = Table(self, name)
@@ -103,7 +107,6 @@ class Database:
             pr,a = self.conn._params, self.conn._addr
             u,h,d,p = pr.user, a[0], pr.database, a[1]
         return f"postgresql://{u}@{h}:{p}/{d}"
-
 
 # %% ../nbs/00_core.ipynb #ae461a23
 class Table:
@@ -153,7 +156,7 @@ class _ColsGetter:
     def __init__(self, tbl): self.tbl = tbl
     def __dir__(self): return list(self.tbl.cols)
     def __repr__(self): return ", ".join(dir(self))
-    def __call__(self): return [_Col(self.tbl.name,o.name) for o in self.tbl.columns]
+    def __call__(self): return [_Col(self.tbl.name, c) for c in self.tbl.cols]
     def __contains__(self, s): return (s if isinstance(s,str) else s.c) in self.tbl.cols
     def __getattr__(self, k):
         if k[0]=='_': raise AttributeError
@@ -586,3 +589,16 @@ async def create_pool(*args, **kwargs):
     res = Database(pool, refresh=False)
     await res.refresh()
     return res
+
+# %% ../nbs/00_core.ipynb #b147794a
+from contextlib import asynccontextmanager
+
+@patch
+@asynccontextmanager
+async def transaction(self:Database):
+    "Context manager yielding a transactional Database on a single connection"
+    async with self.acquire() as conn:
+        async with conn.transaction():
+            _txn_conn.set(conn)
+            try: yield self
+            finally: _txn_conn.set(None)
