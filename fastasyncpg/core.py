@@ -7,8 +7,9 @@ __all__ = ['pg_to_py', 'py_to_pg', 'Results', 'FRecord', 'table_names', 'view_na
 
 # %% ../nbs/00_core.ipynb #222d751e
 from fastcore.utils import *
-import asyncpg
+import asyncpg, contextvars
 from asyncpg import connection,protocol
+from contextlib import asynccontextmanager
 
 # %% ../nbs/00_core.ipynb #cdb9cd9e
 class Results(list):
@@ -71,8 +72,6 @@ async def pk_cols(conn, table):
     return [r['attname'] for r in res]
 
 # %% ../nbs/00_core.ipynb #a947c1ab
-import contextvars
-from contextlib import asynccontextmanager
 _txn_conn = contextvars.ContextVar('_txn_conn', default=None)  # Used by Database.__getattr__ to route queries through active transaction; see Transactions section below
 
 # %% ../nbs/00_core.ipynb #350e6168
