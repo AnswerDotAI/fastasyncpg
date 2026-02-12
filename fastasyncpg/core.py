@@ -72,6 +72,7 @@ async def pk_cols(conn, table):
 
 # %% ../nbs/00_core.ipynb #a947c1ab
 import contextvars
+from contextlib import asynccontextmanager
 _txn_conn = contextvars.ContextVar('_txn_conn', default=None)  # Used by Database.__getattr__ to route queries through active transaction; see Transactions section below
 
 # %% ../nbs/00_core.ipynb #350e6168
@@ -591,8 +592,6 @@ async def create_pool(*args, **kwargs):
     return res
 
 # %% ../nbs/00_core.ipynb #b147794a
-from contextlib import asynccontextmanager
-
 @patch
 @asynccontextmanager
 async def transaction(self:Database):
