@@ -603,8 +603,7 @@ def from_meta(cls:Database, conn, db):
 @asynccontextmanager
 async def acquire(self:Database):
     "Context manager yielding a Database on a single pool connection"
-    async with self.conn.acquire() as conn:
-        yield Database.from_meta(conn, self)
+    async with self.conn.acquire() as conn: yield Database.from_meta(conn, self)
 
 # %% ../nbs/00_core.ipynb #f0b7826a
 @patch
@@ -612,5 +611,4 @@ async def acquire(self:Database):
 async def transaction(self:Database):
     "Context manager yielding a transactional Database on a single connection"
     async with self.acquire() as db:
-        async with db.conn.transaction():
-            yield db
+        async with db.conn.transaction(): yield db
