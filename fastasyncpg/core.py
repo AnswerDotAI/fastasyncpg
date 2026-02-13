@@ -7,6 +7,7 @@ __all__ = ['pg_to_py', 'py_to_pg', 'Results', 'FRecord', 'table_names', 'view_na
 
 # %% ../nbs/00_core.ipynb #222d751e
 from fastcore.utils import *
+from contextlib import asynccontextmanager
 import asyncpg
 from asyncpg import connection,protocol
 
@@ -586,3 +587,30 @@ async def create_pool(*args, **kwargs):
     res = Database(pool, refresh=False)
     await res.refresh()
     return res
+
+# %% ../nbs/00_core.ipynb #7072a71f
+@patch(cls_method=True)
+def from_meta(cls:Database, conn, db):
+    "Create a Database sharing metadata from `db` but using `conn`"
+    res = cls(conn, refresh=False)
+    res._tnames,res._vnames,res._cols,res._pks = db._tnames,db._vnames,db._cols,db._pks
+    for name,tbl in db._tables.items():
+        if hasattr(tbl, 'cls'): res.table(name).cls = tbl.cls
+    return res
+
+# %% ../nbs/00_core.ipynb #3e4e3b18
+@patch
+@asynccontextmanager
+async def acquire(self:Database):
+    "Context manager yielding a Database on a single pool connection"
+    async with self.conn.acquire() as conn:
+        yield Database.from_meta(conn, self)
+
+# %% ../nbs/00_core.ipynb #f0b7826a
+@patch
+@asynccontextmanager
+async def transaction(self:Database):
+    "Context manager yielding a transactional Database on a single connection"
+    async with self.acquire() as db:
+        async with db.conn.transaction():
+            yield db
