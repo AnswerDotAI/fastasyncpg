@@ -1,6 +1,14 @@
-# Release notes
+# .giRelease notes
 
 <!-- do not remove -->
+
+## 0.0.4
+
+### New Features
+
+- Add bulk inserts/updates methods with batched VALUES clauses ([#7](https://github.com/AnswerDotAI/fastasyncpg/issues/7))
+- Add acquire/transaction context managers and `from_meta` for connection-scoped Database usage ([#6](https://github.com/AnswerDotAI/fastasyncpg/issues/6))
+
 
 ## 0.0.3
 
