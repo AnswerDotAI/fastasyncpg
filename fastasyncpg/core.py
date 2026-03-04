@@ -498,6 +498,53 @@ async def update(self:Table, record=None, pk_values=None, **kwargs):
     sql = f'UPDATE {self} SET {sets} WHERE {pk_where} RETURNING *'
     return await self._rec(sql, *row.values(), *args, err=f"{self.name}[{pk_values}]")
 
+# %% ../nbs/00_core.ipynb #4e7c77dc
+def _vals_sql(rows, types):
+    "Build the VALUES clause and list of arguments"
+    n, args, parts = len(types), [], []
+    ct = [t.split('(')[0].strip() for t in types]
+    for i,row in enumerate(rows):
+        parts.append('(' + ', '.join(f'${i*n+j+1}::{ct[j]}' for j in range(n)) + ')')
+        args.extend(row.values())
+    return args, ', '.join(parts)
+
+# %% ../nbs/00_core.ipynb #1a1e9bfe
+def _join_where(pks, xtra_id, n_args):
+    "Get the join WHERE clause for `updates` and the xtra args needed for it (if any)"
+    pw = ' AND '.join(f't."{pk}"=v."{pk}"' for pk in pks)
+    args = []
+    if xtra_id:
+        pw += ' AND ' + ' AND '.join(f't."{k}"=${n_args+i+1}' for i,k in enumerate(xtra_id))
+        args = list(xtra_id.values())
+    return pw, args
+
+# %% ../nbs/00_core.ipynb #51c5ace8
+@patch
+async def updates(self:Table, records):
+    "Update multiple rows in one query and return them"
+    if not records: return []
+    rows = [_process_row(r, {}) for r in records]
+    cols = list(rows[0].keys())
+    args, vals = _vals_sql(rows, [self.cols[c] for c in cols])
+    non_pk = [c for c in cols if c not in self.pks]
+    sets = ', '.join(f'"{c}"=v."{c}"' for c in non_pk)
+    pw, xa = _join_where(self.pks, self.xtra_id, len(args))
+    qcols = ', '.join(f'"{c}"' for c in cols)
+    sql = f'UPDATE {self} AS t SET {sets} FROM (VALUES {vals}) AS v({qcols}) WHERE {pw} RETURNING t.*'
+    return await self._recs(sql, *args, *xa)
+
+# %% ../nbs/00_core.ipynb #27ebb35c
+@patch
+async def inserts(self:Table, records):
+    "Insert multiple rows in one query and return them"
+    if not records: return []
+    rows = [_process_row(r, self.xtra_id) for r in records]
+    cols = list(rows[0].keys())
+    args, vals = _vals_sql(rows, [self.cols[c] for c in cols])
+    qcols = ', '.join(f'"{c}"' for c in cols)
+    sql = f'INSERT INTO {self} ({qcols}) VALUES {vals} RETURNING *'
+    return await self._recs(sql, *args)
+
 # %% ../nbs/00_core.ipynb #f9968e6f
 @patch
 async def delete(self:Table, pk_values):
