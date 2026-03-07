@@ -2,6 +2,13 @@
 
 <!-- do not remove -->
 
+## 0.0.5
+
+### New Features
+
+- Add upserts, groupby methods; switch inserts/updates to executemany ([#8](https://github.com/AnswerDotAI/fastasyncpg/issues/8))
+
+
 ## 0.0.4
 
 ### New Features
