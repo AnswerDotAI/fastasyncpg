@@ -499,51 +499,37 @@ async def update(self:Table, record=None, pk_values=None, **kwargs):
     return await self._rec(sql, *row.values(), *args, err=f"{self.name}[{pk_values}]")
 
 # %% ../nbs/00_core.ipynb #4e7c77dc
-def _vals_sql(rows, types):
-    "Build the VALUES clause and list of arguments"
-    n, args, parts = len(types), [], []
-    ct = [t.split('(')[0].strip() for t in types]
-    for i,row in enumerate(rows):
-        parts.append('(' + ', '.join(f'${i*n+j+1}::{ct[j]}' for j in range(n)) + ')')
-        args.extend(row.values())
-    return args, ', '.join(parts)
-
-# %% ../nbs/00_core.ipynb #1a1e9bfe
-def _join_where(pks, xtra_id, n_args):
-    "Get the join WHERE clause for `updates` and the xtra args needed for it (if any)"
-    pw = ' AND '.join(f't."{pk}"=v."{pk}"' for pk in pks)
-    args = []
-    if xtra_id:
-        pw += ' AND ' + ' AND '.join(f't."{k}"=${n_args+i+1}' for i,k in enumerate(xtra_id))
-        args = list(xtra_id.values())
-    return pw, args
+def _norm_rows(rows):
+    "Normalize rows to same columns, return (cols, list of arg tuples)"
+    cols = list(dict.fromkeys(k for r in rows for k in r))
+    return cols, [tuple(r.get(c) for c in cols) for r in rows]
 
 # %% ../nbs/00_core.ipynb #51c5ace8
 @patch
 async def updates(self:Table, records):
-    "Update multiple rows in one query and return them"
-    if not records: return []
+    "Update multiple rows"
+    if not records: return
     rows = [_process_row(r, {}) for r in records]
-    cols = list(rows[0].keys())
-    args, vals = _vals_sql(rows, [self.cols[c] for c in cols])
+    cols, norm = _norm_rows(rows)
     non_pk = [c for c in cols if c not in self.pks]
-    sets = ', '.join(f'"{c}"=v."{c}"' for c in non_pk)
-    pw, xa = _join_where(self.pks, self.xtra_id, len(args))
-    qcols = ', '.join(f'"{c}"' for c in cols)
-    sql = f'UPDATE {self} AS t SET {sets} FROM (VALUES {vals}) AS v({qcols}) WHERE {pw} RETURNING t.*'
-    return await self._recs(sql, *args, *xa)
+    sets = ', '.join(f'"{c}"=${i+1}' for i,c in enumerate(non_pk))
+    pw = _pk_where(self.pks, len(non_pk))
+    xa = tuple(self.xtra_id.values())
+    if xa: pw += ' AND ' + ' AND '.join(f'"{k}"=${len(non_pk)+len(self.pks)+i+1}' for i,k in enumerate(self.xtra_id))
+    ci = {c:i for i,c in enumerate(cols)}
+    args = [tuple(row[ci[c]] for c in non_pk) + tuple(row[ci[pk]] for pk in self.pks) + xa for row in norm]
+    await self.db.executemany(f'UPDATE {self} SET {sets} WHERE {pw}', args)
 
 # %% ../nbs/00_core.ipynb #27ebb35c
 @patch
 async def inserts(self:Table, records):
-    "Insert multiple rows in one query and return them"
-    if not records: return []
+    "Insert multiple rows"
+    if not records: return
     rows = [_process_row(r, self.xtra_id) for r in records]
-    cols = list(rows[0].keys())
-    args, vals = _vals_sql(rows, [self.cols[c] for c in cols])
+    cols, args = _norm_rows(rows)
     qcols = ', '.join(f'"{c}"' for c in cols)
-    sql = f'INSERT INTO {self} ({qcols}) VALUES {vals} RETURNING *'
-    return await self._recs(sql, *args)
+    vals = ', '.join(f'${i+1}' for i in range(len(cols)))
+    await self.db.executemany(f'INSERT INTO {self} ({qcols}) VALUES ({vals})', args)
 
 # %% ../nbs/00_core.ipynb #f9968e6f
 @patch
@@ -625,6 +611,38 @@ async def upsert(self:Table, record=None, **kwargs):
     pk = self.pks[0]
     updates = ', '.join(f'"{k}"=EXCLUDED."{k}"' for k in row if k != pk)
     return await self._rec(f'INSERT INTO {self} ({cols}) VALUES ({vals}) ON CONFLICT ("{pk}") DO UPDATE SET {updates} RETURNING *', *row.values())
+
+# %% ../nbs/00_core.ipynb #9abd1d88
+@patch
+async def upserts(self:Table, records):
+    "Insert or update multiple rows"
+    if not records: return
+    pk = self.pks[0]
+    proc = [_process_row(r, self.xtra_id) for r in records]
+    has_pk = [r for r in proc if r.get(pk) is not None]
+    no_pk =  [{k:v for k,v in r.items() if k != pk} for r in proc if r.get(pk) is None]
+    if has_pk:
+        cols, args = _norm_rows(has_pk)
+        qcols = ', '.join(f'"{c}"' for c in cols)
+        vals = ', '.join(f'${i+1}' for i in range(len(cols)))
+        upd = ', '.join(f'"{c}"=EXCLUDED."{c}"' for c in cols if c != pk)
+        await self.db.executemany(f'INSERT INTO {self} ({qcols}) VALUES ({vals}) ON CONFLICT ("{pk}") DO UPDATE SET {upd}', args)
+    if no_pk: await self.inserts(no_pk)
+
+# %% ../nbs/00_core.ipynb #4962e324
+@patch
+async def groupby(self:Table, groupflds:list[str], aggs:list[str]):
+    "Dict of `groupflds` to `aggs` results via GROUP BY"
+    gcols,acols = ','.join(f'"{g}"' for g in groupflds), ','.join(aggs)
+    where, args = _add_xtra(self, None, [])
+    sql = f"SELECT {gcols},{acols} FROM {self}"
+    if where: sql += f" WHERE {where}"
+    sql += f" GROUP BY {gcols}"
+    rows = await self.db.q(sql, *args)
+    ng = len(groupflds)
+    def _key(r): return r[0] if ng==1 else tuple(r[i] for i in range(ng))
+    def _val(r): return r[ng] if len(aggs)==1 else tuple(r[ng+i] for i in range(len(aggs)))
+    return {_key(r): _val(r) for r in rows}
 
 # %% ../nbs/00_core.ipynb #6be00990
 async def create_pool(*args, **kwargs):
