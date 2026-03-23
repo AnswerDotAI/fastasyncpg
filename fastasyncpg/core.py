@@ -392,15 +392,21 @@ async def selectone(
     elif len(res) > 1: raise ValueError(f"Not unique: {len(res)} results")
     return res[0]
 
-# %% ../nbs/00_core.ipynb #215c7630
+# %% ../nbs/00_core.ipynb #d994c66c
 @patch
-async def item(self:Database, sql, args=None):
-    "Execute sql and return a single field from a single row"
-    res = await self.fetch(sql, *(args or []))
+async def qone(self:Database, sql, *args, **kwargs):
+    "Execute sql and return exactly one row"
+    res = await self.q(sql, *args, **kwargs)
     if len(res)==0: raise NotFoundError
-    elif len(res) > 1: raise ValueError(f"Not unique: {len(res)} results")
-    row = res[0]
-    if len(row) > 1: raise ValueError(f"Too many fields: {len(row)} fields")
+    if len(res)>1: raise ValueError(f"Not unique: {len(res)} results")
+    return res[0]
+
+# %% ../nbs/00_core.ipynb #e53a268a
+@patch
+async def item(self:Database, sql, *args, **kwargs):
+    "Execute sql and return a single field from a single row"
+    row = await self.qone(sql, *args, **kwargs)
+    if len(row)>1: raise ValueError(f"Too many fields: {len(row)} fields")
     return row[0]
 
 # %% ../nbs/00_core.ipynb #0261da8a
