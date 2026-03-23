@@ -2,6 +2,13 @@
 
 <!-- do not remove -->
 
+## 0.0.6
+
+### New Features
+
+- Add `Database.qone` method and refactor `item` to use it ([#9](https://github.com/AnswerDotAI/fastasyncpg/issues/9))
+
+
 ## 0.0.5
 
 ### New Features
