@@ -28,4 +28,5 @@ version = {attr = "fastasyncpg.__version__"}
 include = ["fastasyncpg"]
 
 [tool.nbdev]
+allowed_cell_metadata_keys = ["solveit_ai"]
 custom_sidebar = false
