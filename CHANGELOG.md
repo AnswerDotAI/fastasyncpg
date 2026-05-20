@@ -2,6 +2,13 @@
 
 <!-- do not remove -->
 
+## 0.0.7
+
+### New Features
+
+- Add `Table.claim`/`claim_one` for `SELECT ... FOR UPDATE SKIP LOCKED` queue workers ([#10](https://github.com/AnswerDotAI/fastasyncpg/issues/10))
+
+
 ## 0.0.6
 
 ### New Features
