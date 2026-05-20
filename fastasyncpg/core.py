@@ -8,7 +8,7 @@ __all__ = ['pg_to_py', 'py_to_pg', 'Results', 'FRecord', 'table_names', 'view_na
 # %% ../nbs/00_core.ipynb #222d751e
 from fastcore.utils import *
 from contextlib import asynccontextmanager
-import asyncpg
+import asyncpg,traceback
 from asyncpg import connection,protocol
 
 # %% ../nbs/00_core.ipynb #cdb9cd9e
@@ -325,17 +325,22 @@ async def get(self:Table, pk):
     try: return await self[pk]
     except NotFoundError: return None
 
-# %% ../nbs/00_core.ipynb #fd2d38a2
-@patch
-async def rows_where(self:Table, where=None, where_args=None, order_by=None, select='*', limit=None, offset=None,
-    as_cls=True, debug=False):
-    "Iterate over rows matching where clause"
-    where, args = _add_xtra(self, where, where_args or [])
-    sql = f'SELECT {select} FROM {self}'
+# %% ../nbs/00_core.ipynb #19069c39
+def _select_sql(tbl, where, where_args, order_by=None, select='*', limit=None, offset=None, suffix=''):
+    where, args = _add_xtra(tbl, where, where_args or [])
+    sql = f'SELECT {select} FROM {tbl}'
     if where: sql += f' WHERE {where}'
     if order_by: sql += f' ORDER BY {order_by}'
     if limit: sql += f' LIMIT {limit}'
     if offset: sql += f' OFFSET {offset}'
+    if suffix: sql += f' {suffix}'
+    return sql, args
+
+# %% ../nbs/00_core.ipynb #fd2d38a2
+@patch
+async def rows_where(self:Table, where=None, where_args=None, order_by=None, select='*', limit=None, offset=None, as_cls=True, debug=False):
+    "Iterate over rows matching where clause"
+    sql, args = _select_sql(self, where, where_args, order_by, select, limit, offset)
     if debug: print(sql)
     if as_cls: return await self._recs(sql, *args)
     return await self.db.q(sql, *args)
@@ -669,12 +674,14 @@ def from_meta(cls:Database, conn, db):
         if hasattr(tbl, 'cls'): res.table(name).cls = tbl.cls
     return res
 
-# %% ../nbs/00_core.ipynb #3e4e3b18
+# %% ../nbs/00_core.ipynb #c6be6cb0
 @patch
 @asynccontextmanager
 async def acquire(self:Database):
-    "Context manager yielding a Database on a single pool connection"
-    async with self.conn.acquire() as conn: yield Database.from_meta(conn, self)
+    "Context manager yielding a Database on a single connection"
+    if isinstance(self.conn, asyncpg.pool.Pool):
+        async with self.conn.acquire() as conn: yield Database.from_meta(conn, self)
+    else: yield self
 
 # %% ../nbs/00_core.ipynb #f0b7826a
 @patch
@@ -683,3 +690,33 @@ async def transaction(self:Database):
     "Context manager yielding a transactional Database on a single connection"
     async with self.acquire() as db:
         async with db.conn.transaction(): yield db
+
+# %% ../nbs/00_core.ipynb #de4c0d24
+@patch
+async def claim(self:Table, where=None, where_args=None, order_by=None, limit=1):
+    "Claim a row with SELECT ... FOR UPDATE SKIP LOCKED (use inside a transaction)"
+    sql, args = _select_sql(self, where, where_args, order_by, limit=limit, suffix='FOR UPDATE SKIP LOCKED')
+    return await self._rec(sql, *args)
+
+# %% ../nbs/00_core.ipynb #b9695685
+class _ClaimCtx:
+    def __init__(self):
+        self.evt = self.db = self.tb = self.exc = None
+        self.retry = self.failed = False
+
+@patch
+@asynccontextmanager
+async def claim_one(self:Table, status_col='status', pending='pending', completed='completed', failed='failed', order_by=None):
+    "Claim a row and manage its status transitions"
+    p = _ClaimCtx()
+    async with self.db.transaction() as txn:
+        tbl = txn.t[self.name]
+        p.db = txn
+        p.evt = await tbl.claim(where=f'"{status_col}"=$1', where_args=[pending], order_by=order_by)
+        try: yield p
+        except Exception as e: p.failed, p.exc, p.tb = True, e, traceback.format_exc()
+        if p.evt is None: return
+        pk = self.pks[0]
+        new = failed if p.failed else (None if p.retry else completed)
+        stmt = f'UPDATE {self} SET "{status_col}"=$1 WHERE "{pk}"=$2'
+        if new: await txn.execute(stmt, new, get_field(p.evt, pk))
