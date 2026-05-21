@@ -715,9 +715,9 @@ async def claim_one(self:Table, status_col='status', pending='pending', complete
         tbl = txn.t[self.name]
         p.db = txn
         p.evt = await tbl.claim(where=f'"{status_col}"=$1', where_args=[pending], order_by=order_by)
+        if p.evt is None: return
         try: yield p
         except Exception as e: p.failed, p.exc, p.tb = True, e, traceback.format_exc()
-        if p.evt is None: return
         pk = self.pks[0]
         new = failed if p.failed else (None if p.retry else completed)
         stmt = f'UPDATE {self} SET "{status_col}"=$1 WHERE "{pk}"=$2'
