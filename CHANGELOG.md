@@ -2,6 +2,13 @@
 
 <!-- do not remove -->
 
+## 0.0.8
+
+### Bugs Squashed
+
+- p.evt check above yield in `claim_one` ([#11](https://github.com/AnswerDotAI/fastasyncpg/issues/11))
+
+
 ## 0.0.7
 
 ### New Features
