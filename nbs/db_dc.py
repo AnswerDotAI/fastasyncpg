@@ -1,4 +1,4 @@
-__all__ = ["Album", "Artist", "Cat", "Cats", "Customer", "Dog", "Employee", "Genre", "Invoice", "Invoice_Line", "Job", "Media_Type", "Playlist", "Playlist_Track", "Toy", "Track"]
+__all__ = ["Album", "Artist", "Cat", "Cats", "Customer", "Dog", "Employee", "Genre", "Invoice", "Invoice_Line", "Job", "Media_Type", "Playlist", "Playlist_Track", "T", "Toy", "Track"]
 from dataclasses import dataclass
 import datetime,decimal
 from uuid import UUID
@@ -113,6 +113,11 @@ class Playlist:
 class Playlist_Track:
     playlist_id: int | None = UNSET
     track_id: int | None = UNSET
+
+@dataclass
+class T:
+    id: int | None = UNSET
+    name: str | None = UNSET
 
 @dataclass
 class Toy:

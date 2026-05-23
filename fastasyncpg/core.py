@@ -10,7 +10,7 @@ __all__ = ['pg_to_py', 'py_to_pg', 'Results', 'FRecord', 'table_names', 'view_na
 # %% ../nbs/00_core.ipynb #222d751e
 from fastcore.utils import *
 from contextlib import asynccontextmanager
-import asyncpg,traceback
+import asyncpg,traceback,sys
 from asyncpg import connection,protocol
 
 # %% ../nbs/00_core.ipynb #cdb9cd9e
@@ -463,7 +463,7 @@ def _process_row(row, kwargs):
 # %% ../nbs/00_core.ipynb #343a8cc8
 def _prep_row(record, kwargs):
     row = _process_row(record, kwargs)
-    if not row: return None*3
+    if not row: return [None]*3
     cols = ', '.join(f'"{k}"' for k in row)
     vals = ', '.join(f'${i+1}' for i in range(len(row)))
     return row, cols, vals
@@ -692,6 +692,28 @@ async def transaction(self:Database):
     "Context manager yielding a transactional Database on a single connection"
     async with self.acquire() as db:
         async with db.conn.transaction(): yield db
+
+# %% ../nbs/00_core.ipynb #984e27c4
+def _sql_kind(sql):
+    for s in sqlparse.parse(sql):
+        for t in s.flatten():
+            if t.ttype is tokens.Keyword.DML:
+                return (None,None) if t.value.upper()=='SELECT' else ('dml',t.value.upper())
+            if t.ttype is tokens.Keyword.DDL: return 'ddl', t.value.upper()
+    return None, None
+
+@patch
+async def _do_execute(self:asyncpg.Connection, query, executor, timeout, retry=True, *, ignore_custom_codec=False, record_class=None):
+    cat, kind = _sql_kind(query)
+    if cat: sys.audit(f'fastaudit.{cat}', kind, query)
+    return await self._orig__do_execute(query, executor, timeout, retry, ignore_custom_codec=ignore_custom_codec, record_class=record_class)
+
+@patch
+async def execute(self:asyncpg.Connection, query, *args, timeout=None):
+    if not args:
+        cat, kind = _sql_kind(query)
+        if cat: sys.audit(f'fastaudit.{cat}', kind, query)
+    return await self._orig_execute(query, *args, timeout=timeout)
 
 # %% ../nbs/00_core.ipynb #de4c0d24
 @patch
