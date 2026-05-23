@@ -693,26 +693,25 @@ async def transaction(self:Database):
     async with self.acquire() as db:
         async with db.conn.transaction(): yield db
 
-# %% ../nbs/00_core.ipynb #984e27c4
-def _sql_kind(sql):
+# %% ../nbs/00_core.ipynb #0f3e2764
+def _sql_kinds(sql):
+    "Yield (cat, kind) for each non-SELECT DML/DDL statement in `sql`"
     for s in sqlparse.parse(sql):
         for t in s.flatten():
             if t.ttype is tokens.Keyword.DML:
-                return (None,None) if t.value.upper()=='SELECT' else ('dml',t.value.upper())
-            if t.ttype is tokens.Keyword.DDL: return 'ddl', t.value.upper()
-    return None, None
+                if t.value.upper() != 'SELECT': yield ('dml', t.value.upper())
+            elif t.ttype is tokens.Keyword.DDL: yield ('ddl', t.value.upper())
 
 @patch
 async def _do_execute(self:asyncpg.Connection, query, executor, timeout, retry=True, *, ignore_custom_codec=False, record_class=None):
-    cat, kind = _sql_kind(query)
-    if cat: sys.audit(f'fastaudit.{cat}', kind, query)
+    for cat, kind in _sql_kinds(query): sys.audit(f'fastaudit.{cat}', kind, query)
     return await self._orig__do_execute(query, executor, timeout, retry, ignore_custom_codec=ignore_custom_codec, record_class=record_class)
 
 @patch
 async def execute(self:asyncpg.Connection, query, *args, timeout=None):
+    "Execute an SQL command (or commands)."
     if not args:
-        cat, kind = _sql_kind(query)
-        if cat: sys.audit(f'fastaudit.{cat}', kind, query)
+        for cat, kind in _sql_kinds(query): sys.audit(f'fastaudit.{cat}', kind, query)
     return await self._orig_execute(query, *args, timeout=timeout)
 
 # %% ../nbs/00_core.ipynb #de4c0d24
