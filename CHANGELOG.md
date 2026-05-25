@@ -2,6 +2,17 @@
 
 <!-- do not remove -->
 
+## 0.0.9
+
+### New Features
+
+- Add audit events ([#12](https://github.com/AnswerDotAI/fastasyncpg/issues/12))
+
+### Bugs Squashed
+
+- Revert `claim_one` to yield before return ([#13](https://github.com/AnswerDotAI/fastasyncpg/pull/13)), thanks to [@curtis-allan](https://github.com/curtis-allan)
+
+
 ## 0.0.8
 
 ### Bugs Squashed
