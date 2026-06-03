@@ -736,9 +736,9 @@ async def claim_one(self:Table, status_col='status', pending='pending', complete
         tbl = txn.t[self.name]
         p.evt = await tbl.claim(where=f'"{status_col}"=$1', where_args=[pending], order_by=order_by)
         p.db = txn
-        try:
-            async with txn.conn.transaction(): yield p  # create save point in case tx is aborted
-        except Exception as e: p.failed, p.exc, p.tb = True, e, traceback.format_exc()
+        async with txn.conn.transaction():
+            try: yield p  # create save point in case tx is aborted
+            except Exception as e: p.failed, p.exc, p.tb = True, e, traceback.format_exc()
         if p.evt is None: return
         pk = self.pks[0]
         new = failed if p.failed else (None if p.retry else completed)
@@ -746,4 +746,3 @@ async def claim_one(self:Table, status_col='status', pending='pending', complete
         if new: 
             await txn.execute(stmt, new, get_field(p.evt, pk))
             p.evt = await tbl.selectone(f'"{pk}"=$1', [get_field(p.evt, pk)])
-
