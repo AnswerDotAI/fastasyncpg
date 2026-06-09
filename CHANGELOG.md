@@ -2,6 +2,13 @@
 
 <!-- do not remove -->
 
+## 0.0.10
+
+### Bugs Squashed
+
+- Preserve `claim_one` status update when transaction aborts ([#14](https://github.com/AnswerDotAI/fastasyncpg/pull/14)), thanks to [@kafkasl](https://github.com/kafkasl)
+
+
 ## 0.0.9
 
 ### New Features
