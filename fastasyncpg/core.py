@@ -350,6 +350,7 @@ async def rows_where(self:Table, where=None, where_args=None, order_by=None, sel
 # %% ../nbs/00_core.ipynb #b96b3f21
 @patch
 async def count_where(self:Table, where=None, where_args=None):
+    # TODO: support `?` placeholders too
     where, args = _add_xtra(self, where, where_args)
     sql = f'SELECT COUNT(*) FROM {self}'
     if where: sql += f' WHERE {where}'
