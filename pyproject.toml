@@ -14,6 +14,9 @@ keywords = ['nbdev']
 classifiers = [ "Programming Language :: Python :: 3", "Programming Language :: Python :: 3 :: Only" ]
 dependencies = [ "asyncpg", "fastcore","sqlparse" ]
 
+[project.optional-dependencies]
+dev = ['ipykernel_helper']
+
 [project.urls]
 Repository = "https://github.com/AnswerDotAI/fastasyncpg"
 Documentation = "https://AnswerDotAI.github.io/fastasyncpg/"
