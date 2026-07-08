@@ -15,7 +15,7 @@ classifiers = [ "Programming Language :: Python :: 3", "Programming Language :: 
 dependencies = [ "asyncpg", "fastcore","sqlparse" ]
 
 [project.optional-dependencies]
-dev = ['ipykernel_helper']
+dev = ['ipykernel_helper>=0.0.58']
 
 [project.urls]
 Repository = "https://github.com/AnswerDotAI/fastasyncpg"
