@@ -2,6 +2,14 @@
 
 <!-- do not remove -->
 
+## 0.0.11
+
+### New Features
+
+- Resolve executor at call time via per-task ContextVar and per-loop pools: acquire/transaction yield the same Database, drop row._db and from_meta, add unconnected Database() + connect() ([#15](https://github.com/AnswerDotAI/fastasyncpg/issues/15))
+
+
+
 ## 0.0.10
 
 ### Bugs Squashed
