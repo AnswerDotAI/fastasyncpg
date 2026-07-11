@@ -13,9 +13,7 @@ $ pip install fastasyncpg
 
 ## How to use
 
-Create one
-[`Database`](https://AnswerDotAI.github.io/fastasyncpg/core.html#database)
-at import time, and connect it at app startup:
+Create one [`Database`](https://AnswerDotAI.github.io/fastasyncpg/core.html#database) at import time, and connect it at app startup:
 
 ``` python
 from fastasyncpg.core import Database
@@ -25,11 +23,7 @@ db = Database()          # module-level singleton, importable everywhere
 async def startup(): await db.connect(database='mydb')
 ```
 
-Queries run through the pool by default. `transaction` (and `acquire`)
-make a single connection *current for the running task* via a
-`ContextVar`, so everything inside the block – including table helpers
-and code called indirectly – joins the transaction, with no
-handle-passing:
+Queries run through the pool by default. `transaction` (and `acquire`) make a single connection *current for the running task* via a `ContextVar`, so everything inside the block – including table helpers and code called indirectly – joins the transaction, with no handle-passing:
 
 ``` python
 async with db.transaction():
@@ -37,6 +31,4 @@ async with db.transaction():
     await db.t.user.update(pk_values=[uid], credits=100)
 ```
 
-See the [API docs](https://AnswerDotAI.github.io/fastasyncpg/core.html)
-for table access (`db.t`), auto-generated dataclasses, queue helpers
-(`claim_one`), and more.
+See the [API docs](https://AnswerDotAI.github.io/fastasyncpg/core.html) for table access (`db.t`), auto-generated dataclasses, queue helpers (`claim_one`), and more.
