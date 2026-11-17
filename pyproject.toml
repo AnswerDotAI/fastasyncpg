@@ -24,6 +24,9 @@ Documentation = "https://AnswerDotAI.github.io/fastasyncpg/"
 [project.entry-points.nbdev]
 fastasyncpg = "fastasyncpg._modidx:d"
 
+[project.entry-points.pyskills]
+fastasyncpg = "fastasyncpg.skill"
+
 [tool.setuptools.dynamic]
 version = {attr = "fastasyncpg.__version__"}
 
