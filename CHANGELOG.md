@@ -2,6 +2,13 @@
 
 <!-- do not remove -->
 
+## 0.1.2
+
+### New Features
+
+- Add fetchrow, fetchval, exists, and `one_or_none`; rename selectone/qone to one and item to `scalar_one` ([#17](https://github.com/AnswerDotAI/fastasyncpg/issues/17))
+
+
 ## 0.1.1
 
 ### New Features
