@@ -5,12 +5,13 @@
 # %% auto #0
 __all__ = ['pg_to_py', 'py_to_pg', 'Results', 'FRecord', 'table_names', 'view_names', 'columns_info', 'pk_cols', 'Database',
            'Table', 'conv_placeholders', 'get_typ', 'setup_json', 'connect', 'all_dcs', 'NotFoundError', 'get_field',
-           'create_mod', 'col_def', 'create_pool']
+           'create_mod', 'col_def', 'create_pool', 'listen']
 
 # %% ../nbs/00_core.ipynb #222d751e
 from fastcore.utils import *
-from contextlib import asynccontextmanager
-import asyncio,asyncpg,traceback,sys
+from fastcore.meta import delegates
+from contextlib import asynccontextmanager, suppress
+import asyncio,asyncpg,logging,traceback,sys
 from contextvars import ContextVar
 from weakref import WeakKeyDictionary
 from asyncpg import connection,protocol
@@ -766,3 +767,43 @@ async def claim_one(self:Table, status_col='status', pending='pending', complete
             await txn.execute(stmt, new, get_field(p.evt, pk))
             p.evt = await self.selectone(f'"{pk}"=$1', [get_field(p.evt, pk)])
 
+
+# %% ../nbs/00_core.ipynb #15582b9e
+_CLOSED = object()
+_log = logging.getLogger(__name__)
+
+async def _call(fn, *args):
+    res = fn(*args)
+    return (await res) if inspect.isawaitable(res) else res
+
+@delegates(asyncpg.connect)
+async def listen(
+    channel:str, # PostgreSQL NOTIFY channel name
+    on_notify, # Sync or async callback receiving each notification payload string
+    *, on_connect=None, # Optional sync or async callback receiving `reconnected: bool` after subscribing
+    on_disconnect=None, # Optional sync or async callback invoked when a connection drops
+    retry:float=1, # Seconds to wait before reconnecting after an error
+    **kwargs
+):
+    "Listen on a PostgreSQL `NOTIFY` channel, reconnecting automatically on disconnect or error."
+    reconnected = False
+    while True:
+        conn, q = None, asyncio.Queue()
+        try:
+            conn = await asyncpg.connect(**kwargs)
+            conn.add_termination_listener(lambda *_: q.put_nowait(_CLOSED))
+            await conn.add_listener(channel, lambda *a: q.put_nowait(a[-1]))
+            if on_connect: await _call(on_connect, reconnected)
+            reconnected = True
+            while (payload := await q.get()) is not _CLOSED:
+                try: await _call(on_notify, payload)
+                except Exception as e: _log.warning('%s handler failed: %s', channel, e)
+            if on_disconnect: await _call(on_disconnect)
+        except asyncio.CancelledError: raise
+        except Exception as e:
+            _log.warning('%s listener error: %s', channel, e)
+            reconnected = True
+            await asyncio.sleep(retry)
+        finally:
+            if conn:
+                with suppress(Exception): await conn.close()
