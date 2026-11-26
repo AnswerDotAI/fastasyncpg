@@ -218,6 +218,24 @@ async def q(self:Database, sql, *args, **kwargs):
     csql, kw_args = conv_placeholders(sql, **kwargs)
     return Results(await self.fetch(csql, *args, *kw_args))
 
+# %% ../nbs/00_core.ipynb #e16bb20d
+@patch
+async def fetchrow(self:Database, sql, *args, timeout=None, record_class=None, **kwargs):
+    "Fetch the first row of `sql` (or None), supporting `?`, `:name`, and `$1` placeholders"
+    csql, kw_args = conv_placeholders(sql, **kwargs)
+    return await self.conn.fetchrow(csql, *args, *kw_args, timeout=timeout, record_class=record_class)
+
+@patch
+async def fetchval(self:Database, sql, *args, column=0, timeout=None, **kwargs):
+    "Fetch one value from the first row of `sql` (or None), supporting `?`, `:name`, and `$1` placeholders"
+    csql, kw_args = conv_placeholders(sql, **kwargs)
+    return await self.conn.fetchval(csql, *args, *kw_args, column=column, timeout=timeout)
+
+@patch
+async def exists(self:Database, sql, *args, **kwargs):
+    "Return True if `sql` produces at least one row"
+    return bool(await self.fetchval(f'SELECT EXISTS({sql.strip().rstrip(";")})', *args, **kwargs))
+
 # %% ../nbs/00_core.ipynb #0fc7310b
 from datetime import datetime, date, time, timedelta
 from decimal import Decimal
@@ -363,7 +381,7 @@ async def rows_where(self:Table, where=None, where_args=None, order_by=None, sel
 # %% ../nbs/00_core.ipynb #b96b3f21
 @patch
 async def count_where(self:Table, where=None, where_args=None):
-    # TODO: support `?` placeholders too
+    "Count rows matching `where` (plus any `xtra` constraints)"
     where, args = _add_xtra(self, where, where_args)
     sql = f'SELECT COUNT(*) FROM {self}'
     if where: sql += f' WHERE {where}'
@@ -372,6 +390,15 @@ async def count_where(self:Table, where=None, where_args=None):
 # %% ../nbs/00_core.ipynb #481230b7
 @patch(as_prop=True)
 async def count(self:Table): return await self.count_where()
+
+# %% ../nbs/00_core.ipynb #dfb2a683
+@patch
+async def exists(self:Table, where=None, where_args=None):
+    "Return True if any row matches `where` (plus any `xtra` constraints)"
+    where, args = _add_xtra(self, where, where_args)
+    sql = f'SELECT 1 FROM {self}'
+    if where: sql += f' WHERE {where}'
+    return await self.db.exists(sql, *args)
 
 # %% ../nbs/00_core.ipynb #28682469
 from collections.abc import Mapping
@@ -399,35 +426,48 @@ async def __call__(self:Table, where=None, where_args=None, order_by=None, limit
 
 # %% ../nbs/00_core.ipynb #73e88814
 @patch
-async def selectone(
+async def one_or_none(
     self:Table,
-    where:str|None=None,  # SQL where fragment to use, for example `id > ?`
-    where_args: Iterable|dict|NoneType=None, # Parameters to use with `where`; iterable for `id>?`, or dict for `id>:id`
-    select:str = "*", # Comma-separated list of columns to select
-    as_cls:bool=True, # Convert returned dict to stored dataclass?
+    where:str|None=None, # SQL where fragment, e.g. `id > ?`
+    where_args:Iterable|NoneType=None, # Positional parameters for `where`
+    select:str="*", # Comma-separated list of columns to select
+    as_cls:bool=True, # Convert returned row to stored dataclass?
     debug:bool=False
-)->list:
-    "Shortcut for `__call__` that returns exactly one item"
+):
+    "Return the single matching row or None; raises ValueError if multiple match"
     res = await self(where=where, where_args=where_args, select=select, as_cls=as_cls, limit=2, debug=debug)
-    if len(res)==0: raise NotFoundError
-    elif len(res) > 1: raise ValueError(f"Not unique: {len(res)} results")
-    return res[0]
+    if len(res) > 1: raise ValueError(f"Not unique: {len(res)} results")
+    return res[0] if res else None
+
+@patch
+@delegates(Table.one_or_none)
+async def one(self:Table, where:str|None=None, where_args:Iterable|NoneType=None, **kwargs):
+    "Return the single matching row; raises NotFoundError if none or ValueError if multiple match"
+    res = await self.one_or_none(where=where, where_args=where_args, **kwargs)
+    if res is None: raise NotFoundError
+    return res
 
 # %% ../nbs/00_core.ipynb #d994c66c
 @patch
-async def qone(self:Database, sql, *args, **kwargs):
-    "Execute sql and return exactly one row"
+async def one_or_none(self:Database, sql, *args, **kwargs):
+    "Execute `sql` and return the single row or None; raises ValueError if multiple rows"
     res = await self.q(sql, *args, **kwargs)
-    if len(res)==0: raise NotFoundError
-    if len(res)>1: raise ValueError(f"Not unique: {len(res)} results")
-    return res[0]
+    if len(res) > 1: raise ValueError(f"Not unique: {len(res)} results")
+    return res[0] if res else None
+
+@patch
+async def one(self:Database, sql, *args, **kwargs):
+    "Execute `sql` and return exactly one row; raises NotFoundError if empty or ValueError if multiple rows"
+    res = await self.one_or_none(sql, *args, **kwargs)
+    if res is None: raise NotFoundError
+    return res
 
 # %% ../nbs/00_core.ipynb #e53a268a
 @patch
-async def item(self:Database, sql, *args, **kwargs):
-    "Execute sql and return a single field from a single row"
-    row = await self.qone(sql, *args, **kwargs)
-    if len(row)>1: raise ValueError(f"Too many fields: {len(row)} fields")
+async def scalar_one(self:Database, sql, *args, **kwargs):
+    "Execute `sql` and return the single field from the single row"
+    row = await self.one(sql, *args, **kwargs)
+    if len(row) != 1: raise ValueError(f"Expected 1 field, got {len(row)}")
     return row[0]
 
 # %% ../nbs/00_core.ipynb #0261da8a
@@ -765,7 +805,7 @@ async def claim_one(self:Table, status_col='status', pending='pending', complete
         stmt = f'UPDATE {self} SET "{status_col}"=$1 WHERE "{pk}"=$2'
         if new:
             await txn.execute(stmt, new, get_field(p.evt, pk))
-            p.evt = await self.selectone(f'"{pk}"=$1', [get_field(p.evt, pk)])
+            p.evt = await self.one(f'"{pk}"=$1', [get_field(p.evt, pk)])
 
 
 # %% ../nbs/00_core.ipynb #15582b9e
