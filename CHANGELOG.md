@@ -2,6 +2,13 @@
 
 <!-- do not remove -->
 
+## 0.1.3
+
+### New Features
+
+- Support ?, :name, and $1 placeholders in Database.execute and Database.fetch ([#18](https://github.com/AnswerDotAI/fastasyncpg/issues/18))
+
+
 ## 0.1.2
 
 ### New Features
